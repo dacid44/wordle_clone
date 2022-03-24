@@ -1,7 +1,7 @@
 [package]
-name = "eframe_template"
+name = "wordle_clone"
 version = "0.1.0"
-authors = ["Emil Ernerfeldt <emil.ernerfeldt@gmail.com>"]
+authors = ["Keegan Conlee <dacid44@gmail.com>"]
 edition = "2021"
 rust-version = "1.56"
 
@@ -12,12 +12,15 @@ crate-type = ["cdylib", "rlib"]
 
 [dependencies]
 eframe = "0.17.0" # Gives us egui, epi and web+native backends
+#nanorand = "0.7.0"
+rand = "0.8.5"
+getrandom = { version = "0.2", features = ["js"] }
 
-serde = { version = "1", features = ["derive"], optional = true }
+serde = { version = "1", features = ["derive"]}
 
 [features]
-default = []
-persistence = ["eframe/persistence", "serde"] # Enable if you want to persist app state on shutdown
+default = ["persistence"]
+persistence = ["eframe/persistence"] # Enable if you want to persist app state on shutdown
 
 [profile.release]
 opt-level = 2 # fast and small wasm
@@ -33,3 +36,12 @@ opt-level = 2 # fast and small wasm
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 console_error_panic_hook = "0.1.6"
 tracing-wasm = "0.2"
+
+#[lib]
+#name = "d4ft2"
+#src = "src/lib.rs"
+#crate-type = ["cdylib", "rlib"]
+#
+#[[bin]]
+#name = "d4ft2"
+#src = "src/main.rs"
