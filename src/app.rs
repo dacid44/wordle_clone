@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 use eframe::{egui, epi};
-use eframe::egui::{Color32, Key, RichText, Sense, Ui};
+use eframe::egui::{Color32, Key, Layout, RichText, Sense, Ui};
 use eframe::egui::style::Margin;
 use rand::seq::SliceRandom;
 
@@ -17,6 +17,33 @@ enum CellState {
     Gray,
     Yellow,
     Green,
+}
+
+#[cfg_attr(feature = "persistence", derive(serde::Deserialize, serde::Serialize))]
+enum GameState {
+    Playing,
+    Success(usize),
+    Failure,
+}
+
+impl GameState {
+    fn get_state_label(&self, correct_word: &String) -> egui::Label {
+        match self {
+            Self::Playing => egui::Label::new(""),
+            Self::Success(attempts) => egui::Label::new(
+                RichText::new(format!("Success in {} tries!", attempts))
+                    .size(24.0)
+                    .strong()
+                    .color(Color32::DARK_GREEN)
+            ),
+            Self::Failure => egui::Label::new(
+                RichText::new(format!("The correct word was \"{}\".", correct_word))
+                    .size(24.0)
+                    .strong()
+                    .color(Color32::RED)
+            )
+        }
+    }
 }
 
 #[cfg_attr(feature = "persistence", derive(serde::Deserialize, serde::Serialize))]
@@ -55,6 +82,8 @@ pub struct WordleApp {
     keyboard_state: HashMap<char, CellState>,
     #[cfg_attr(feature = "persistence", serde(skip))]
     keyboard_keydown: String,
+    #[cfg_attr(feature = "persistence", serde(skip))]
+    game_state: GameState,
 }
 
 impl Default for WordleApp {
@@ -70,6 +99,7 @@ impl Default for WordleApp {
             ),
             keyboard_state: LETTERS.chars().zip(std::iter::repeat(CellState::Empty)).collect(),
             keyboard_keydown: String::default(),
+            game_state: GameState::Playing,
         }
     }
 }
@@ -106,52 +136,67 @@ impl epi::App for WordleApp {
 
     /// Called each time the UI needs repainting, which may be many times per second.
     /// Put your widgets into a `SidePanel`, `TopPanel`, `CentralPanel`, `Window` or `Area`.
-    fn update(&mut self, ctx: &egui::Context, _frame: &epi::Frame) {
-        let Self { word, cells, next_cell, keyboard, keyboard_state, keyboard_keydown } = self;
+    fn update(&mut self, ctx: &egui::Context, frame: &epi::Frame) {
+        let Self {
+            word, cells, next_cell,
+            keyboard, keyboard_state, keyboard_keydown, game_state
+        } = self;
 
-        let mut found_char = false;
-        for letter in LETTERS.chars() {
-            // Should be fine since it should only be an uppercase letter (from LETTERS)
-            if (
-                ctx.input().key_released(get_key_from_char(letter).unwrap()) || *keyboard_keydown == letter.to_string()
-            ) && next_cell.0 < 6 && next_cell.1 < 5 {
-                cells[next_cell.0][next_cell.1].letter = letter;
-                next_cell.1 += 1;
-                found_char = true;
-                break;
-            }
-        }
-        if !found_char {
-            if (
-                ctx.input().key_released(Key::Backspace) || *keyboard_keydown == "DEL"
-            ) && next_cell.1 > 0 {
-                next_cell.1 -= 1;
-                cells[next_cell.0][next_cell.1].letter = ' ';
-            } else if (
-                ctx.input().key_released(Key::Enter) || *keyboard_keydown == "ENT"
-            ) && next_cell.1 >= 5 {
-                if check_word(&mut cells[next_cell.0], word, keyboard, keyboard_state) {
-                    next_cell.0 += 1;
-                } else {
-                    for cell in cells[next_cell.0].iter_mut() {
-                        cell.letter = ' ';
-                    }
+        if matches!(game_state, GameState::Playing) {
+            let mut found_char = false;
+            for letter in LETTERS.chars() {
+                // Should be fine since it should only be an uppercase letter (from LETTERS)
+                if (
+                    ctx.input().key_released(get_key_from_char(letter).unwrap()) || *keyboard_keydown == letter.to_string()
+                ) && next_cell.0 < 6 && next_cell.1 < 5 {
+                    cells[next_cell.0][next_cell.1].letter = letter;
+                    next_cell.1 += 1;
+                    found_char = true;
+                    break;
                 }
-                next_cell.1 = 0;
+            }
+            if !found_char {
+                if (
+                    ctx.input().key_released(Key::Backspace) || *keyboard_keydown == "DEL"
+                ) && next_cell.1 > 0 {
+                    next_cell.1 -= 1;
+                    cells[next_cell.0][next_cell.1].letter = ' ';
+                } else if (
+                    ctx.input().key_released(Key::Enter) || *keyboard_keydown == "ENT"
+                ) && next_cell.1 >= 5 {
+                    if check_word(&mut cells[next_cell.0], word, keyboard, keyboard_state) {
+                        if cells[next_cell.0].iter().all(|x| matches!(x.state, CellState::Green)) {
+                            *game_state = GameState::Success(next_cell.0 + 1);
+                        } else if next_cell.0 == 5 {
+                            *game_state = GameState::Failure;
+                        }
+                        next_cell.0 += 1;
+                    } else {
+                        for cell in cells[next_cell.0].iter_mut() {
+                            cell.letter = ' ';
+                        }
+                    }
+                    next_cell.1 = 0;
+                }
             }
         }
-        *keyboard_keydown = String::new();
+        if *keyboard_keydown != "" {
+            *keyboard_keydown = String::new();
+        }
 
-        // egui::TopBottomPanel::top("top_panel").show(ctx, |ui| {
-        //     // The top panel is often a good place for a menu bar:
-        //     egui::menu::bar(ui, |ui| {
-        //         ui.menu_button("File", |ui| {
-        //             if ui.button("Quit").clicked() {
-        //                 frame.quit();
-        //             }
-        //         });
-        //     });
-        // });
+        egui::TopBottomPanel::top("top_panel").show(ctx, |ui| {
+            // The top panel is often a good place for a menu bar:
+            egui::menu::bar(ui, |ui| {
+                ui.menu_button("File", |ui| {
+                    if ui.button("Quit").clicked() {
+                        frame.quit();
+                    }
+                });
+                ui.with_layout(Layout::right_to_left(), |ui| {
+                    egui::global_dark_light_mode_switch(ui);
+                })
+            });
+        });
 
         egui::CentralPanel::default().show(ctx, |ui| {
             // The central panel the region left after adding TopPanel's and SidePanel's
@@ -161,7 +206,7 @@ impl epi::App for WordleApp {
                 //     RichText::new(word.clone())
                 //         .heading()
                 // );
-                egui::Frame::none().margin(Margin::symmetric(ui.available_width() / 2.0 - 128.0, 24.0)).show(ui, |ui| {
+                egui::Frame::none().margin(Margin::symmetric(ui.available_width() / 2.0 - 128.0, 12.0)).show(ui, |ui| {
                     egui::Grid::new("wordle_grid")
                         .spacing((4.0, 4.0))
                         .show(ui, |ui| {
@@ -191,6 +236,18 @@ impl epi::App for WordleApp {
                             }
                         });
                 });
+
+                //if matches!(game_state, GameState::Success(_) | GameState::Failure) {
+                if true {
+                    egui::Frame::none()
+                        .margin(Margin {left: 0.0, right: 0.0, top: 12.0, bottom: 24.0})
+                        .show(ui, |ui| {
+                        ui.add_sized(
+                            (400.0, 30.0),
+                            game_state.get_state_label(word)
+                        );
+                    });
+                }
 
                 egui::Frame::none().margin(Margin::symmetric(ui.available_width() / 2.0 - 198.0, 0.0)).show(ui, |ui| {
                     ui.horizontal(|ui| {
