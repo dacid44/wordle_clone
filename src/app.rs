@@ -1,8 +1,8 @@
-use std::collections::HashMap;
-use eframe::{egui, epi};
-use eframe::egui::{Color32, Key, Layout, RichText, Sense, Ui};
 use eframe::egui::style::Margin;
+use eframe::egui::{Color32, Key, Layout, RichText, Sense, Ui};
+use eframe::{egui, epi};
 use rand::seq::SliceRandom;
+use std::collections::HashMap;
 
 const LETTERS: &str = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
 const KBD_ROW1: &str = "QWERTYUIOP";
@@ -27,21 +27,21 @@ enum GameState {
 }
 
 impl GameState {
-    fn get_state_label(&self, correct_word: &String) -> egui::Label {
+    fn get_state_label(&self, correct_word: &str) -> egui::Label {
         match self {
             Self::Playing => egui::Label::new(""),
             Self::Success(attempts) => egui::Label::new(
                 RichText::new(format!("Success in {} tries!", attempts))
                     .size(24.0)
                     .strong()
-                    .color(Color32::DARK_GREEN)
+                    .color(Color32::DARK_GREEN),
             ),
             Self::Failure => egui::Label::new(
                 RichText::new(format!("The correct word was \"{}\".", correct_word))
                     .size(24.0)
                     .strong()
-                    .color(Color32::RED)
-            )
+                    .color(Color32::RED),
+            ),
         }
     }
 }
@@ -81,7 +81,7 @@ pub struct WordleApp {
     #[cfg_attr(feature = "persistence", serde(skip))]
     keyboard_state: HashMap<char, CellState>,
     #[cfg_attr(feature = "persistence", serde(skip))]
-    keyboard_keydown: String,
+    kbd_keydown: String,
     #[cfg_attr(feature = "persistence", serde(skip))]
     game_state: GameState,
 }
@@ -92,13 +92,17 @@ impl Default for WordleApp {
             word: get_random_word(),
             cells: Default::default(),
             next_cell: (0, 0),
+            #[rustfmt::skip] // rustfmt wants to split these chains into loads of tiny lines
             keyboard: (
-                KBD_ROW1.chars().map(|c| WordleCell::keyboard(c)).collect::<Vec<WordleCell>>().try_into().unwrap(),
-                KBD_ROW2.chars().map(|c| WordleCell::keyboard(c)).collect::<Vec<WordleCell>>().try_into().unwrap(),
-                KBD_ROW3.chars().map(|c| WordleCell::keyboard(c)).collect::<Vec<WordleCell>>().try_into().unwrap(),
+                KBD_ROW1.chars().map(WordleCell::keyboard)
+                    .collect::<Vec<WordleCell>>().try_into().unwrap(),
+                KBD_ROW2.chars().map(WordleCell::keyboard)
+                    .collect::<Vec<WordleCell>>().try_into().unwrap(),
+                KBD_ROW3.chars().map(WordleCell::keyboard)
+                    .collect::<Vec<WordleCell>>().try_into().unwrap(),
             ),
             keyboard_state: LETTERS.chars().zip(std::iter::repeat(CellState::Empty)).collect(),
-            keyboard_keydown: String::default(),
+            kbd_keydown: String::default(),
             game_state: GameState::Playing,
         }
     }
@@ -137,18 +141,26 @@ impl epi::App for WordleApp {
     /// Called each time the UI needs repainting, which may be many times per second.
     /// Put your widgets into a `SidePanel`, `TopPanel`, `CentralPanel`, `Window` or `Area`.
     fn update(&mut self, ctx: &egui::Context, frame: &epi::Frame) {
+        #[rustfmt::skip] // IDE inserts stuff in the line, if it's one line it goes way off the screen
         let Self {
-            word, cells, next_cell,
-            keyboard, keyboard_state, keyboard_keydown, game_state
+            word,
+            cells,
+            next_cell,
+            keyboard,
+            keyboard_state,
+            kbd_keydown,
+            game_state,
         } = self;
 
         if matches!(game_state, GameState::Playing) {
             let mut found_char = false;
             for letter in LETTERS.chars() {
                 // Should be fine since it should only be an uppercase letter (from LETTERS)
-                if (
-                    ctx.input().key_released(get_key_from_char(letter).unwrap()) || *keyboard_keydown == letter.to_string()
-                ) && next_cell.0 < 6 && next_cell.1 < 5 {
+                if (ctx.input().key_released(get_key_from_char(letter).unwrap())
+                    || *kbd_keydown == letter.to_string())
+                    && next_cell.0 < 6
+                    && next_cell.1 < 5
+                {
                     cells[next_cell.0][next_cell.1].letter = letter;
                     next_cell.1 += 1;
                     found_char = true;
@@ -156,14 +168,14 @@ impl epi::App for WordleApp {
                 }
             }
             if !found_char {
-                if (
-                    ctx.input().key_released(Key::Backspace) || *keyboard_keydown == "DEL"
-                ) && next_cell.1 > 0 {
+                if (ctx.input().key_released(Key::Backspace) || *kbd_keydown == "DEL")
+                    && next_cell.1 > 0
+                {
                     next_cell.1 -= 1;
                     cells[next_cell.0][next_cell.1].letter = ' ';
-                } else if (
-                    ctx.input().key_released(Key::Enter) || *keyboard_keydown == "ENT"
-                ) && next_cell.1 >= 5 {
+                } else if (ctx.input().key_released(Key::Enter) || *kbd_keydown == "ENT")
+                    && next_cell.1 >= 5
+                {
                     if check_word(&mut cells[next_cell.0], word, keyboard, keyboard_state) {
                         if cells[next_cell.0].iter().all(|x| matches!(x.state, CellState::Green)) {
                             *game_state = GameState::Success(next_cell.0 + 1);
@@ -180,8 +192,8 @@ impl epi::App for WordleApp {
                 }
             }
         }
-        if *keyboard_keydown != "" {
-            *keyboard_keydown = String::new();
+        if !kbd_keydown.is_empty() {
+            *kbd_keydown = String::new();
         }
 
         egui::TopBottomPanel::top("top_panel").show(ctx, |ui| {
@@ -206,10 +218,10 @@ impl epi::App for WordleApp {
                 //     RichText::new(word.clone())
                 //         .heading()
                 // );
-                egui::Frame::none().margin(Margin::symmetric(ui.available_width() / 2.0 - 128.0, 12.0)).show(ui, |ui| {
-                    egui::Grid::new("wordle_grid")
-                        .spacing((4.0, 4.0))
-                        .show(ui, |ui| {
+                egui::Frame::none()
+                    .margin(Margin::symmetric(ui.available_width() / 2.0 - 128.0, 12.0))
+                    .show(ui, |ui| {
+                        egui::Grid::new("wordle_grid").spacing((4.0, 4.0)).show(ui, |ui| {
                             for row in cells {
                                 for cell in row {
                                     egui::Frame::none()
@@ -227,46 +239,46 @@ impl epi::App for WordleApp {
                                                     RichText::new(cell.letter)
                                                         .size(36.0)
                                                         .strong()
-                                                        .color(Color32::WHITE)
-                                                )
+                                                        .color(Color32::WHITE),
+                                                ),
                                             );
                                         });
                                 }
                                 ui.end_row();
                             }
                         });
-                });
+                    });
 
                 //if matches!(game_state, GameState::Success(_) | GameState::Failure) {
-                if true {
-                    egui::Frame::none()
-                        .margin(Margin {left: 0.0, right: 0.0, top: 12.0, bottom: 24.0})
-                        .show(ui, |ui| {
-                        ui.add_sized(
-                            (400.0, 30.0),
-                            game_state.get_state_label(word)
-                        );
+                egui::Frame::none()
+                    .margin(Margin { left: 0.0, right: 0.0, top: 12.0, bottom: 24.0 })
+                    .show(ui, |ui| {
+                        ui.add_sized((400.0, 30.0), game_state.get_state_label(word));
                     });
-                }
 
-                egui::Frame::none().margin(Margin::symmetric(ui.available_width() / 2.0 - 198.0, 0.0)).show(ui, |ui| {
-                    ui.horizontal(|ui| {
-                        ui.spacing_mut().item_spacing = (4.0, 0.0).into();
-                        add_keyboard_row(ui, &keyboard.0, keyboard_keydown);
-                    });
-                    ui.horizontal(|ui| {
-                        ui.spacing_mut().item_spacing = (4.0, 0.0).into();
-                        egui::Frame::none().margin(Margin::symmetric(20.0, 0.0)).show(ui, |ui| {
-                            add_keyboard_row(ui, &keyboard.1, keyboard_keydown);
+                egui::Frame::none()
+                    .margin(Margin::symmetric(ui.available_width() / 2.0 - 198.0, 0.0))
+                    .show(ui, |ui| {
+                        ui.horizontal(|ui| {
+                            ui.spacing_mut().item_spacing = (4.0, 0.0).into();
+                            add_keyboard_row(ui, &keyboard.0, kbd_keydown);
+                        });
+                        ui.horizontal(|ui| {
+                            ui.spacing_mut().item_spacing = (4.0, 0.0).into();
+                            egui::Frame::none().margin(Margin::symmetric(20.0, 0.0)).show(
+                                ui,
+                                |ui| {
+                                    add_keyboard_row(ui, &keyboard.1, kbd_keydown);
+                                },
+                            );
+                        });
+                        ui.horizontal(|ui| {
+                            ui.spacing_mut().item_spacing = (4.0, 0.0).into();
+                            add_keyboard_button(ui, "ENT", kbd_keydown);
+                            add_keyboard_row(ui, &keyboard.2, kbd_keydown);
+                            add_keyboard_button(ui, "DEL", kbd_keydown);
                         });
                     });
-                    ui.horizontal(|ui| {
-                        ui.spacing_mut().item_spacing = (4.0, 0.0).into();
-                        add_keyboard_button(ui, "ENT", keyboard_keydown);
-                        add_keyboard_row(ui, &keyboard.2, keyboard_keydown);
-                        add_keyboard_button(ui, "DEL", keyboard_keydown);
-                    });
-                });
 
                 // egui::Grid::new("keyboard_grid")
                 //     .spacing((4.0, 4.0))
@@ -286,8 +298,9 @@ impl epi::App for WordleApp {
     }
 }
 
-fn add_keyboard_row(ui: &mut Ui, row: &[WordleCell], keyboard_keydown: &mut String) {
+fn add_keyboard_row(ui: &mut Ui, row: &[WordleCell], kbd_keydown: &mut String) {
     for key in row {
+        #[rustfmt::skip] // rustfmt wants to format 'if ui.add_sized' weird
         egui::Frame::none()
             .fill(match key.state {
                 CellState::Empty => Color32::GRAY,
@@ -306,41 +319,36 @@ fn add_keyboard_row(ui: &mut Ui, row: &[WordleCell], keyboard_keydown: &mut Stri
                             .strong()
                             .color(Color32::WHITE)
                     ).sense(Sense::click())
-                ).clicked() {
-                    if *keyboard_keydown == "" {
-                        *keyboard_keydown = key.letter.to_string();
-                    }
+                ).clicked() && kbd_keydown.is_empty() {
+                    *kbd_keydown = key.letter.to_string();
                 }
             });
     }
 }
 
-fn add_keyboard_button(ui: &mut Ui, text: &str, keyboard_keydown: &mut String) {
-    egui::Frame::none()
-        .fill(Color32::GRAY)
-        .rounding(6.0)
-        //.margin(Margin::same(2.0))
-        .show(ui, |ui| {
-            if ui.add_sized(
-                (56.0, 48.0),
-                egui::Label::new(
-                    RichText::new(text)
-                        .size(18.0)
-                        .strong()
-                        .color(Color32::WHITE)
-                ).sense(Sense::click())
-            ).clicked() {
-                if *keyboard_keydown == "" {
-                    *keyboard_keydown = text.to_string();
-                }
-            }
-        });
+fn add_keyboard_button(ui: &mut Ui, text: &str, kbd_keydown: &mut String) {
+    #[rustfmt::skip] // rustfmt wants to format 'if ui.add_sized' weird
+    egui::Frame::none().fill(Color32::GRAY).rounding(6.0).show(ui, |ui| {
+        if ui.add_sized(
+            (56.0, 48.0),
+            egui::Label::new(
+                RichText::new(text)
+                    .size(18.0)
+                    .strong()
+                    .color(Color32::WHITE)
+            ).sense(Sense::click())
+        ).clicked() && kbd_keydown.is_empty() {
+            *kbd_keydown = text.to_string();
+        }
+    });
 }
 
-fn check_word(word: &mut [WordleCell; 5],
-              correct: &String,
-              keyboard: &mut ([WordleCell; 10], [WordleCell; 9], [WordleCell; 7]),
-              keyboard_state: &mut HashMap<char, CellState>) -> bool {
+fn check_word(
+    word: &mut [WordleCell; 5],
+    correct: &str,
+    keyboard: &mut ([WordleCell; 10], [WordleCell; 9], [WordleCell; 7]),
+    keyboard_state: &mut HashMap<char, CellState>,
+) -> bool {
     if !crate::WORD_LIST.contains(&&*word.iter().map(|x| x.letter).collect::<String>()) {
         return false;
     }
@@ -358,7 +366,10 @@ fn check_word(word: &mut [WordleCell; 5],
             for letter in word.iter_mut() {
                 if letter.letter == correct_letter && matches!(letter.state, CellState::Gray) {
                     letter.state = CellState::Yellow;
-                    promote_cell_state(keyboard_state.get_mut(&letter.letter).unwrap(), CellState::Yellow);
+                    promote_cell_state(
+                        keyboard_state.get_mut(&letter.letter).unwrap(),
+                        CellState::Yellow,
+                    );
                 }
             }
         }
@@ -373,17 +384,22 @@ fn check_word(word: &mut [WordleCell; 5],
     for key in keyboard.2.iter_mut() {
         key.state = keyboard_state.get(&key.letter).unwrap().clone();
     }
-    return true;
+
+    true
 }
 
 fn promote_cell_state(cell: &mut CellState, state: CellState) {
     match state {
-        CellState::Empty => {},
-        CellState::Gray => if matches!(cell, CellState::Empty) {
-            *cell = state;
+        CellState::Empty => {}
+        CellState::Gray => {
+            if matches!(cell, CellState::Empty) {
+                *cell = state;
+            }
         }
-        CellState::Yellow => if matches!(cell, CellState::Empty | CellState::Gray) {
-            *cell = state;
+        CellState::Yellow => {
+            if matches!(cell, CellState::Empty | CellState::Gray) {
+                *cell = state;
+            }
         }
         CellState::Green => {
             *cell = state;
