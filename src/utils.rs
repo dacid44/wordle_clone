@@ -84,6 +84,12 @@ impl WordleApp {
         self.keyboard_state = LETTERS.chars().zip(std::iter::repeat(CellState::Empty)).collect();
         self.game_state = GameState::Playing;
     }
+
+    pub(crate) fn with_args(args: Args) -> Self {
+        let mut app = Self::default();
+        app.args = args;
+        app
+    }
 }
 
 pub(crate) fn promote_cell_state(cell: &mut CellState, state: CellState) {
@@ -194,4 +200,9 @@ fn check_word(
     }
 
     true
+}
+
+#[derive(Default, Clone)]
+pub(crate) struct Args {
+    pub(crate) word: Option<String>,
 }

@@ -98,6 +98,8 @@ impl Default for WordleCell {
 #[cfg_attr(feature = "persistence", serde(default))] // if we add new fields, give them default values when deserializing old state
 pub struct WordleApp {
     #[cfg_attr(feature = "persistence", serde(skip))]
+    pub(crate) args: utils::Args,
+    #[cfg_attr(feature = "persistence", serde(skip))]
     pub(crate) word: String,
     #[cfg_attr(feature = "persistence", serde(skip))]
     pub(crate) cells: [[WordleCell; 5]; 6],
@@ -117,6 +119,7 @@ pub struct WordleApp {
 impl Default for WordleApp {
     fn default() -> Self {
         Self {
+            args: Default::default(),
             word: utils::get_random_word(),
             cells: Default::default(),
             next_cell: (0, 0),
@@ -149,15 +152,19 @@ impl epi::App for WordleApp {
         _frame: &epi::Frame,
         _storage: Option<&dyn epi::Storage>,
     ) {
+        let args = self.args.clone();
+
         // Load previous app state (if any).
         // Note that you must enable the `persistence` feature for this to work.
         #[cfg(feature = "persistence")]
         if let Some(storage) = _storage {
             *self = epi::get_value(storage, epi::APP_KEY).unwrap_or_default()
         }
-        // for row in self.cells.iter_mut() {
-        //     check_word(row, &self.word);
-        // }
+
+        self.args = args;
+        if let Some(word) = &self.args.word {
+            self.word = word.clone();
+        }
     }
 
     /// Called by the frame work to save state before shutdown.
