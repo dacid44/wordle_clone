@@ -1,9 +1,8 @@
-use eframe::egui::style::Margin;
-use eframe::egui::{Color32, Key, Layout, RichText, Sense, Ui};
+use eframe::egui::{Color32, Key, Layout, RichText};
 use eframe::{egui, epi};
-use rand::seq::SliceRandom;
 use std::collections::HashMap;
 
+use crate::{draw, utils};
 const LETTERS: &str = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
 const KBD_ROW1: &str = "QWERTYUIOP";
 const KBD_ROW2: &str = "ASDFGHJKL";
@@ -12,22 +11,39 @@ const KBD_ROW3: &str = "ZXCVBNM";
 #[cfg_attr(feature = "persistence", derive(serde::Deserialize, serde::Serialize))]
 //#[cfg_attr(feature = "persistence", serde(default))]
 #[derive(Debug, Clone)]
-enum CellState {
+pub(crate) enum CellState {
     Empty,
     Gray,
     Yellow,
     Green,
 }
 
+impl CellState {
+    pub(crate) fn get_color(&self, keyboard: bool) -> Color32 {
+        match self {
+            Self::Empty => {
+                if keyboard {
+                    Color32::GRAY
+                } else {
+                    Color32::BLACK
+                }
+            }
+            Self::Gray => Color32::DARK_GRAY,
+            Self::Yellow => Color32::from_rgb(181, 159, 59),
+            Self::Green => Color32::from_rgb(83, 141, 78),
+        }
+    }
+}
+
 #[cfg_attr(feature = "persistence", derive(serde::Deserialize, serde::Serialize))]
-enum GameState {
+pub(crate) enum GameState {
     Playing,
     Success(usize),
     Failure,
 }
 
 impl GameState {
-    fn get_state_label(&self, correct_word: &str) -> egui::Label {
+    pub(crate) fn get_state_label(&self, correct_word: &str) -> egui::Label {
         match self {
             Self::Playing => egui::Label::new(""),
             Self::Success(attempts) => egui::Label::new(
@@ -48,14 +64,25 @@ impl GameState {
 
 #[cfg_attr(feature = "persistence", derive(serde::Deserialize, serde::Serialize))]
 #[cfg_attr(feature = "persistence", serde(default))]
+#[derive(Default)]
+struct DebugMenu {
+    open: bool,
+    #[cfg_attr(feature = "persistence", serde(skip))]
+    new_word: String,
+    #[cfg_attr(feature = "persistence", serde(skip))]
+    focus: bool,
+}
+
+#[cfg_attr(feature = "persistence", derive(serde::Deserialize, serde::Serialize))]
+#[cfg_attr(feature = "persistence", serde(default))]
 #[derive(Debug)]
-struct WordleCell {
-    state: CellState,
-    letter: char,
+pub(crate) struct WordleCell {
+    pub state: CellState,
+    pub letter: char,
 }
 
 impl WordleCell {
-    fn keyboard(c: char) -> Self {
+    pub(crate) fn keyboard(c: char) -> Self {
         Self { state: CellState::Empty, letter: c }
     }
 }
@@ -71,25 +98,26 @@ impl Default for WordleCell {
 #[cfg_attr(feature = "persistence", serde(default))] // if we add new fields, give them default values when deserializing old state
 pub struct WordleApp {
     #[cfg_attr(feature = "persistence", serde(skip))]
-    word: String,
+    pub(crate) word: String,
     #[cfg_attr(feature = "persistence", serde(skip))]
-    cells: [[WordleCell; 5]; 6],
+    pub(crate) cells: [[WordleCell; 5]; 6],
     #[cfg_attr(feature = "persistence", serde(skip))]
-    next_cell: (usize, usize),
+    pub(crate) next_cell: (usize, usize),
     #[cfg_attr(feature = "persistence", serde(skip))]
-    keyboard: ([WordleCell; 10], [WordleCell; 9], [WordleCell; 7]),
+    pub(crate) keyboard: ([WordleCell; 10], [WordleCell; 9], [WordleCell; 7]),
     #[cfg_attr(feature = "persistence", serde(skip))]
-    keyboard_state: HashMap<char, CellState>,
+    pub(crate) keyboard_state: HashMap<char, CellState>,
     #[cfg_attr(feature = "persistence", serde(skip))]
-    kbd_keydown: String,
+    pub(crate) kbd_keydown: String,
     #[cfg_attr(feature = "persistence", serde(skip))]
-    game_state: GameState,
+    pub(crate) game_state: GameState,
+    debug_menu: DebugMenu,
 }
 
 impl Default for WordleApp {
     fn default() -> Self {
         Self {
-            word: get_random_word(),
+            word: utils::get_random_word(),
             cells: Default::default(),
             next_cell: (0, 0),
             #[rustfmt::skip] // rustfmt wants to split these chains into loads of tiny lines
@@ -104,6 +132,7 @@ impl Default for WordleApp {
             keyboard_state: LETTERS.chars().zip(std::iter::repeat(CellState::Empty)).collect(),
             kbd_keydown: String::default(),
             game_state: GameState::Playing,
+            debug_menu: DebugMenu::default(),
         }
     }
 }
@@ -141,68 +170,36 @@ impl epi::App for WordleApp {
     /// Called each time the UI needs repainting, which may be many times per second.
     /// Put your widgets into a `SidePanel`, `TopPanel`, `CentralPanel`, `Window` or `Area`.
     fn update(&mut self, ctx: &egui::Context, frame: &epi::Frame) {
-        #[rustfmt::skip] // IDE inserts stuff in the line, if it's one line it goes way off the screen
-        let Self {
-            word,
-            cells,
-            next_cell,
-            keyboard,
-            keyboard_state,
-            kbd_keydown,
-            game_state,
-        } = self;
+        if self.debug_menu.open {
+            egui::Window::new("Debug Menu").show(ctx, |ui| {
+                ui.label(format!("Current word: {}", self.word));
 
-        if matches!(game_state, GameState::Playing) {
-            let mut found_char = false;
-            for letter in LETTERS.chars() {
-                // Should be fine since it should only be an uppercase letter (from LETTERS)
-                if (ctx.input().key_released(get_key_from_char(letter).unwrap())
-                    || *kbd_keydown == letter.to_string())
-                    && next_cell.0 < 6
-                    && next_cell.1 < 5
+                let response = ui.text_edit_singleline(&mut self.debug_menu.new_word);
+                self.debug_menu.focus = response.has_focus();
+                if response.lost_focus()
+                    && ui.input().key_pressed(Key::Enter)
+                    && crate::WORD_LIST.contains(&&*self.debug_menu.new_word.to_uppercase())
                 {
-                    cells[next_cell.0][next_cell.1].letter = letter;
-                    next_cell.1 += 1;
-                    found_char = true;
-                    break;
+                    self.word = self.debug_menu.new_word.to_uppercase();
                 }
-            }
-            if !found_char {
-                if (ctx.input().key_released(Key::Backspace) || *kbd_keydown == "DEL")
-                    && next_cell.1 > 0
-                {
-                    next_cell.1 -= 1;
-                    cells[next_cell.0][next_cell.1].letter = ' ';
-                } else if (ctx.input().key_released(Key::Enter) || *kbd_keydown == "ENT")
-                    && next_cell.1 >= 5
-                {
-                    if check_word(&mut cells[next_cell.0], word, keyboard, keyboard_state) {
-                        if cells[next_cell.0].iter().all(|x| matches!(x.state, CellState::Green)) {
-                            *game_state = GameState::Success(next_cell.0 + 1);
-                        } else if next_cell.0 == 5 {
-                            *game_state = GameState::Failure;
-                        }
-                        next_cell.0 += 1;
-                    } else {
-                        for cell in cells[next_cell.0].iter_mut() {
-                            cell.letter = ' ';
-                        }
-                    }
-                    next_cell.1 = 0;
+
+                if ui.button("Reset").clicked() {
+                    self.reset();
                 }
-            }
-        }
-        if !kbd_keydown.is_empty() {
-            *kbd_keydown = String::new();
+                if ui.button("Reset with random word").clicked() {
+                    self.reset_random_word();
+                }
+            });
         }
 
         egui::TopBottomPanel::top("top_panel").show(ctx, |ui| {
             // The top panel is often a good place for a menu bar:
             egui::menu::bar(ui, |ui| {
-                ui.menu_button("File", |ui| {
+                ui.menu_button("Menu", |ui| {
                     if ui.button("Quit").clicked() {
                         frame.quit();
                     }
+                    ui.checkbox(&mut self.debug_menu.open, "Show debug menu");
                 });
                 ui.with_layout(Layout::right_to_left(), |ui| {
                     egui::global_dark_light_mode_switch(ui);
@@ -212,236 +209,23 @@ impl epi::App for WordleApp {
 
         egui::CentralPanel::default().show(ctx, |ui| {
             // The central panel the region left after adding TopPanel's and SidePanel's
+            if matches!(self.game_state, GameState::Playing)
+                && (!self.debug_menu.open || !self.debug_menu.focus)
+            {
+                self.handle_keys(ui)
+            }
+            // If there was a key found, clear it
+            if !self.kbd_keydown.is_empty() {
+                self.kbd_keydown = String::new();
+            }
+
             ui.vertical_centered(|ui| {
                 ui.set_width(ui.available_width());
-                // ui.label(
-                //     RichText::new(word.clone())
-                //         .heading()
-                // );
-                egui::Frame::none()
-                    .margin(Margin::symmetric(ui.available_width() / 2.0 - 128.0, 12.0))
-                    .show(ui, |ui| {
-                        egui::Grid::new("wordle_grid").spacing((4.0, 4.0)).show(ui, |ui| {
-                            for row in cells {
-                                for cell in row {
-                                    egui::Frame::none()
-                                        .fill(match cell.state {
-                                            CellState::Empty => Color32::BLACK,
-                                            CellState::Gray => Color32::DARK_GRAY,
-                                            CellState::Yellow => Color32::from_rgb(181, 159, 59),
-                                            CellState::Green => Color32::from_rgb(83, 141, 78),
-                                        })
-                                        .rounding(6.0)
-                                        .show(ui, |ui| {
-                                            ui.add_sized(
-                                                (48.0, 48.0),
-                                                egui::Label::new(
-                                                    RichText::new(cell.letter)
-                                                        .size(36.0)
-                                                        .strong()
-                                                        .color(Color32::WHITE),
-                                                ),
-                                            );
-                                        });
-                                }
-                                ui.end_row();
-                            }
-                        });
-                    });
-
-                //if matches!(game_state, GameState::Success(_) | GameState::Failure) {
-                egui::Frame::none()
-                    .margin(Margin { left: 0.0, right: 0.0, top: 12.0, bottom: 24.0 })
-                    .show(ui, |ui| {
-                        ui.add_sized((400.0, 30.0), game_state.get_state_label(word));
-                    });
-
-                egui::Frame::none()
-                    .margin(Margin::symmetric(ui.available_width() / 2.0 - 198.0, 0.0))
-                    .show(ui, |ui| {
-                        ui.horizontal(|ui| {
-                            ui.spacing_mut().item_spacing = (4.0, 0.0).into();
-                            add_keyboard_row(ui, &keyboard.0, kbd_keydown);
-                        });
-                        ui.horizontal(|ui| {
-                            ui.spacing_mut().item_spacing = (4.0, 0.0).into();
-                            egui::Frame::none().margin(Margin::symmetric(20.0, 0.0)).show(
-                                ui,
-                                |ui| {
-                                    add_keyboard_row(ui, &keyboard.1, kbd_keydown);
-                                },
-                            );
-                        });
-                        ui.horizontal(|ui| {
-                            ui.spacing_mut().item_spacing = (4.0, 0.0).into();
-                            add_keyboard_button(ui, "ENT", kbd_keydown);
-                            add_keyboard_row(ui, &keyboard.2, kbd_keydown);
-                            add_keyboard_button(ui, "DEL", kbd_keydown);
-                        });
-                    });
-
-                // egui::Grid::new("keyboard_grid")
-                //     .spacing((4.0, 4.0))
-                //     .show(ui, |ui| {
-                //         add_keyboard_row(ui, &keyboard.0);
-                //         ui.end_row();
-                //         add_keyboard_row(ui, &keyboard.1);
-                //         ui.end_row();
-                //         add_keyboard_button(ui, "ENT");
-                //         add_keyboard_row(ui, &keyboard.2);
-                //         add_keyboard_button(ui, "DEL");
-                //         ui.end_row();
-                //     });
+                draw::draw_letters(ui, &self.cells);
+                draw::draw_game_end_message(ui, &self.game_state, &self.word);
+                draw::draw_keyboard(ui, &self.keyboard, &mut self.kbd_keydown);
             });
             egui::warn_if_debug_build(ui);
         });
-    }
-}
-
-fn add_keyboard_row(ui: &mut Ui, row: &[WordleCell], kbd_keydown: &mut String) {
-    for key in row {
-        #[rustfmt::skip] // rustfmt wants to format 'if ui.add_sized' weird
-        egui::Frame::none()
-            .fill(match key.state {
-                CellState::Empty => Color32::GRAY,
-                CellState::Gray => Color32::DARK_GRAY,
-                CellState::Yellow => Color32::from_rgb(181, 159, 59),
-                CellState::Green => Color32::from_rgb(83, 141, 78),
-            })
-            .rounding(6.0)
-            //.margin(Margin::same(2.0))
-            .show(ui, |ui| {
-                if ui.add_sized(
-                    (36.0, 48.0),
-                    egui::Label::new(
-                        RichText::new(key.letter)
-                            .size(18.0)
-                            .strong()
-                            .color(Color32::WHITE)
-                    ).sense(Sense::click())
-                ).clicked() && kbd_keydown.is_empty() {
-                    *kbd_keydown = key.letter.to_string();
-                }
-            });
-    }
-}
-
-fn add_keyboard_button(ui: &mut Ui, text: &str, kbd_keydown: &mut String) {
-    #[rustfmt::skip] // rustfmt wants to format 'if ui.add_sized' weird
-    egui::Frame::none().fill(Color32::GRAY).rounding(6.0).show(ui, |ui| {
-        if ui.add_sized(
-            (56.0, 48.0),
-            egui::Label::new(
-                RichText::new(text)
-                    .size(18.0)
-                    .strong()
-                    .color(Color32::WHITE)
-            ).sense(Sense::click())
-        ).clicked() && kbd_keydown.is_empty() {
-            *kbd_keydown = text.to_string();
-        }
-    });
-}
-
-fn check_word(
-    word: &mut [WordleCell; 5],
-    correct: &str,
-    keyboard: &mut ([WordleCell; 10], [WordleCell; 9], [WordleCell; 7]),
-    keyboard_state: &mut HashMap<char, CellState>,
-) -> bool {
-    if !crate::WORD_LIST.contains(&&*word.iter().map(|x| x.letter).collect::<String>()) {
-        return false;
-    }
-
-    for letter in word.iter_mut() {
-        letter.state = CellState::Gray;
-        promote_cell_state(keyboard_state.get_mut(&letter.letter).unwrap(), CellState::Gray)
-    }
-
-    for (i, correct_letter) in correct.chars().enumerate() {
-        if word[i].letter == correct_letter {
-            word[i].state = CellState::Green;
-            keyboard_state.insert(word[i].letter, CellState::Green);
-        } else {
-            for letter in word.iter_mut() {
-                if letter.letter == correct_letter && matches!(letter.state, CellState::Gray) {
-                    letter.state = CellState::Yellow;
-                    promote_cell_state(
-                        keyboard_state.get_mut(&letter.letter).unwrap(),
-                        CellState::Yellow,
-                    );
-                }
-            }
-        }
-    }
-
-    for key in keyboard.0.iter_mut() {
-        key.state = keyboard_state.get(&key.letter).unwrap().clone();
-    }
-    for key in keyboard.1.iter_mut() {
-        key.state = keyboard_state.get(&key.letter).unwrap().clone();
-    }
-    for key in keyboard.2.iter_mut() {
-        key.state = keyboard_state.get(&key.letter).unwrap().clone();
-    }
-
-    true
-}
-
-fn promote_cell_state(cell: &mut CellState, state: CellState) {
-    match state {
-        CellState::Empty => {}
-        CellState::Gray => {
-            if matches!(cell, CellState::Empty) {
-                *cell = state;
-            }
-        }
-        CellState::Yellow => {
-            if matches!(cell, CellState::Empty | CellState::Gray) {
-                *cell = state;
-            }
-        }
-        CellState::Green => {
-            *cell = state;
-        }
-    }
-}
-
-// fn get_random_word() -> String {
-//     crate::WORD_LIST[WyRand::new().generate_range(0_usize..crate::WORD_LIST.len())].to_string()
-// }
-fn get_random_word() -> String {
-    crate::WORD_LIST.choose(&mut rand::thread_rng()).unwrap().to_string()
-}
-
-fn get_key_from_char(c: char) -> Option<Key> {
-    match c {
-        'A' => Some(Key::A),
-        'B' => Some(Key::B),
-        'C' => Some(Key::C),
-        'D' => Some(Key::D),
-        'E' => Some(Key::E),
-        'F' => Some(Key::F),
-        'G' => Some(Key::G),
-        'H' => Some(Key::H),
-        'I' => Some(Key::I),
-        'J' => Some(Key::J),
-        'K' => Some(Key::K),
-        'L' => Some(Key::L),
-        'M' => Some(Key::M),
-        'N' => Some(Key::N),
-        'O' => Some(Key::O),
-        'P' => Some(Key::P),
-        'Q' => Some(Key::Q),
-        'R' => Some(Key::R),
-        'S' => Some(Key::S),
-        'T' => Some(Key::T),
-        'U' => Some(Key::U),
-        'V' => Some(Key::V),
-        'W' => Some(Key::W),
-        'X' => Some(Key::X),
-        'Y' => Some(Key::Y),
-        'Z' => Some(Key::Z),
-        _ => None,
     }
 }

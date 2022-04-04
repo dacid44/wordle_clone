@@ -3,6 +3,9 @@
 #![warn(clippy::all, rust_2018_idioms)]
 
 mod app;
+mod draw;
+mod utils;
+
 pub use app::WordleApp;
 
 include!(concat!(env!("OUT_DIR"), "/word_list.rs"));
