@@ -40,11 +40,20 @@ pub fn start(canvas_id: &str) -> Result<(), eframe::wasm_bindgen::JsValue> {
         &web_sys::window().expect("no global window").location().search()?,
     )?;
 
-    let app = match search_params.get("word") {
-        Some(arg) if WORD_LIST.contains(&&*arg.to_uppercase()) => {
-            WordleApp::with_args(utils::Args { word: Some(arg.to_uppercase()) })
-        }
-        _ => WordleApp::default(),
+    let word = if let Some(arg) = search_params.get("word") {
+        arg.to_uppercase()
+    } else if let Some(arg) = search_params.get("bword")
+        .map(|x| utils::decode(x).ok())
+        .flatten()
+    {
+        arg
+    } else { String::new() };
+
+    let app = if WORD_LIST.contains(&&*word) {
+        WordleApp::with_args(utils::Args { word: Some(word) })
+    } else {
+        WordleApp::default()
     };
+
     eframe::start_web(canvas_id, Box::new(app))
 }

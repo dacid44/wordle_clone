@@ -1,8 +1,8 @@
 use eframe::egui::{Color32, Key, Layout, RichText};
 use eframe::{egui, epi};
 use std::collections::HashMap;
-
 use crate::{draw, utils};
+
 const LETTERS: &str = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
 const KBD_ROW1: &str = "QWERTYUIOP";
 const KBD_ROW2: &str = "ASDFGHJKL";
@@ -180,6 +180,14 @@ impl epi::App for WordleApp {
         if self.debug_menu.open {
             egui::Window::new("Debug Menu").show(ctx, |ui| {
                 ui.label(format!("Current word: {}", self.word));
+                ui.label(format!(
+                    "Current word (base64): {}",
+                    utils::encode(self.word.clone()),
+                ));
+                ui.label(format!(
+                    "Current word (base64 decoded): {}",
+                    utils::decode(utils::encode(self.word.clone())).unwrap(),
+                ));
 
                 let response = ui.text_edit_singleline(&mut self.debug_menu.new_word);
                 self.debug_menu.focus = response.has_focus();

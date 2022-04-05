@@ -206,3 +206,20 @@ fn check_word(
 pub(crate) struct Args {
     pub(crate) word: Option<String>,
 }
+
+pub(crate) fn encode(s: String) -> String {
+    let mut out = s.to_uppercase();
+    for _ in 0..5 {
+        out = base64::encode_config(out, base64::URL_SAFE_NO_PAD);
+    }
+    out
+}
+
+pub(crate) fn decode(s: String) -> Result<String, base64::DecodeError> {
+    let mut out = s;
+    for _ in 0..5 {
+        out = String::from_utf8_lossy(
+            &*base64::decode_config(out, base64::URL_SAFE_NO_PAD)?).into();
+    }
+    Ok(out.to_uppercase())
+}
