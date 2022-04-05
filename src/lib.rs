@@ -7,6 +7,7 @@ mod draw;
 mod utils;
 
 pub use app::WordleApp;
+pub use utils::Args;
 
 include!(concat!(env!("OUT_DIR"), "/word_list.rs"));
 
@@ -42,12 +43,11 @@ pub fn start(canvas_id: &str) -> Result<(), eframe::wasm_bindgen::JsValue> {
 
     let word = if let Some(arg) = search_params.get("word") {
         arg.to_uppercase()
-    } else if let Some(arg) = search_params.get("bword")
-        .map(|x| utils::decode(x).ok())
-        .flatten()
-    {
+    } else if let Some(arg) = search_params.get("bword").map(|x| utils::decode(x).ok()).flatten() {
         arg
-    } else { String::new() };
+    } else {
+        String::new()
+    };
 
     let app = if WORD_LIST.contains(&&*word) {
         WordleApp::with_args(utils::Args { word: Some(word) })

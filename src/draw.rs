@@ -109,7 +109,7 @@ pub(crate) fn draw_game_end_message(ui: &mut Ui, game_state: &GameState, word: &
         });
 }
 
-pub fn add_letter_label(
+fn add_letter_label(
     ui: &mut Ui,
     size: impl Into<Vec2>,
     text: &str,
@@ -125,4 +125,36 @@ pub fn add_letter_label(
             label
         }
     })
+}
+
+pub(crate) fn draw_qr_code(ui: &mut Ui, data: &[qrcode::Color], width: usize) {
+    let size = ui.available_width().min(ui.available_height());
+    let square_size = size * 0.9 / width as f32;
+    egui::Frame::none().fill(Color32::WHITE).margin(Margin::same(0.05 * size)).show(ui, |ui| {
+        egui::Grid::new("qrcode_grid")
+            .min_col_width(0.0)
+            .min_row_height(0.0)
+            .spacing((0.0, 0.0))
+            .show(ui, |ui| {
+                for i in 0..width {
+                    for j in 0..width {
+                        egui::Frame::none()
+                            .fill(match data[i * width + j] {
+                                qrcode::Color::Light => Color32::WHITE,
+                                qrcode::Color::Dark => Color32::BLACK,
+                            })
+                            .show(ui, |ui| {
+                                egui::Frame::none()
+                                    .margin(Margin::same(square_size / 2.0))
+                                    .show(ui, |_| {})
+                                // ui.add_sized(
+                                //     (square_size, square_size),
+                                //     egui::Label::new(RichText::new("").size(1.0)),
+                                // );
+                            });
+                    }
+                    ui.end_row();
+                }
+            });
+    });
 }

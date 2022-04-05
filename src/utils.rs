@@ -1,6 +1,7 @@
 use crate::app::{CellState, GameState, WordleCell};
 use crate::WordleApp;
 use eframe::egui::{Key, Ui};
+use qrcode::QrCode;
 use rand::seq::SliceRandom;
 use std::collections::HashMap;
 
@@ -85,7 +86,7 @@ impl WordleApp {
         self.game_state = GameState::Playing;
     }
 
-    pub(crate) fn with_args(args: Args) -> Self {
+    pub fn with_args(args: Args) -> Self {
         let mut app = Self::default();
         app.args = args;
         app
@@ -203,8 +204,8 @@ fn check_word(
 }
 
 #[derive(Default, Clone)]
-pub(crate) struct Args {
-    pub(crate) word: Option<String>,
+pub struct Args {
+    pub word: Option<String>,
 }
 
 pub(crate) fn encode(s: String) -> String {
@@ -218,8 +219,38 @@ pub(crate) fn encode(s: String) -> String {
 pub(crate) fn decode(s: String) -> Result<String, base64::DecodeError> {
     let mut out = s;
     for _ in 0..5 {
-        out = String::from_utf8_lossy(
-            &*base64::decode_config(out, base64::URL_SAFE_NO_PAD)?).into();
+        out =
+            String::from_utf8_lossy(&*base64::decode_config(out, base64::URL_SAFE_NO_PAD)?).into();
     }
     Ok(out.to_uppercase())
+}
+
+pub(crate) fn gen_qrcode(s: String) -> (Vec<qrcode::Color>, usize) {
+    if let Some(base) = get_url_base() {
+        if let Ok(code) = QrCode::new(format!("{}?bword={}", base, encode(s))) {
+            (code.to_colors(), code.width())
+        } else {
+            (Vec::new(), 0)
+        }
+    } else {
+        (Vec::new(), 0)
+    }
+}
+
+#[cfg(target_arch = "wasm32")]
+fn get_url_base() -> Option<String> {
+    let loc = &web_sys::window().expect("no global window").location();
+    if let Ok(origin) = loc.origin() {
+        if let Ok(pathname) = loc.pathname() {
+            Some(format!("{}{}", origin, pathname))
+        } else {
+            None
+        }
+    } else {
+        None
+    }
+}
+#[cfg(not(target_arch = "wasm32"))]
+fn get_url_base() -> Option<String> {
+    Some("https://dacid44.github.io/wordle_clone/".to_string())
 }

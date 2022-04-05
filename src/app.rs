@@ -1,7 +1,7 @@
+use crate::{draw, utils};
 use eframe::egui::{Color32, Key, Layout, RichText};
 use eframe::{egui, epi};
 use std::collections::HashMap;
-use crate::{draw, utils};
 
 const LETTERS: &str = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
 const KBD_ROW1: &str = "QWERTYUIOP";
@@ -73,6 +73,13 @@ struct DebugMenu {
     focus: bool,
 }
 
+#[derive(Default)]
+struct QrCodeWindow {
+    open: bool,
+    data: Vec<qrcode::Color>,
+    width: usize,
+}
+
 #[cfg_attr(feature = "persistence", derive(serde::Deserialize, serde::Serialize))]
 #[cfg_attr(feature = "persistence", serde(default))]
 #[derive(Debug)]
@@ -114,6 +121,8 @@ pub struct WordleApp {
     #[cfg_attr(feature = "persistence", serde(skip))]
     pub(crate) game_state: GameState,
     debug_menu: DebugMenu,
+    #[cfg_attr(feature = "persistence", serde(skip))]
+    qrcode_window: QrCodeWindow,
 }
 
 impl Default for WordleApp {
@@ -136,6 +145,7 @@ impl Default for WordleApp {
             kbd_keydown: String::default(),
             game_state: GameState::Playing,
             debug_menu: DebugMenu::default(),
+            qrcode_window: QrCodeWindow::default(),
         }
     }
 }
@@ -178,33 +188,50 @@ impl epi::App for WordleApp {
     /// Put your widgets into a `SidePanel`, `TopPanel`, `CentralPanel`, `Window` or `Area`.
     fn update(&mut self, ctx: &egui::Context, frame: &epi::Frame) {
         if self.debug_menu.open {
-            egui::Window::new("Debug Menu").show(ctx, |ui| {
-                ui.label(format!("Current word: {}", self.word));
-                ui.label(format!(
-                    "Current word (base64): {}",
-                    utils::encode(self.word.clone()),
-                ));
-                ui.label(format!(
-                    "Current word (base64 decoded): {}",
-                    utils::decode(utils::encode(self.word.clone())).unwrap(),
-                ));
+            let mut debug_open = true;
+            egui::Window::new("Debug Menu")
+                .open(&mut debug_open)
+                .default_pos(ctx.available_rect().right_top())
+                .show(ctx, |ui| {
+                    ui.label(format!("Current word: {}", self.word));
+                    ui.label(format!(
+                        "Current word (base64): {}",
+                        utils::encode(self.word.clone()),
+                    ));
+                    ui.label(format!(
+                        "Current word (base64 decoded): {}",
+                        utils::decode(utils::encode(self.word.clone())).unwrap(),
+                    ));
 
-                let response = ui.text_edit_singleline(&mut self.debug_menu.new_word);
-                self.debug_menu.focus = response.has_focus();
-                if response.lost_focus()
-                    && ui.input().key_pressed(Key::Enter)
-                    && crate::WORD_LIST.contains(&&*self.debug_menu.new_word.to_uppercase())
-                {
-                    self.word = self.debug_menu.new_word.to_uppercase();
-                }
+                    let response = ui.text_edit_singleline(&mut self.debug_menu.new_word);
+                    self.debug_menu.focus = response.has_focus();
+                    if response.lost_focus()
+                        && ui.input().key_pressed(Key::Enter)
+                        && crate::WORD_LIST.contains(&&*self.debug_menu.new_word.to_uppercase())
+                    {
+                        self.word = self.debug_menu.new_word.to_uppercase();
+                    }
 
-                if ui.button("Reset").clicked() {
-                    self.reset();
-                }
-                if ui.button("Reset with random word").clicked() {
-                    self.reset_random_word();
-                }
-            });
+                    if ui.button("Reset").clicked() {
+                        self.reset();
+                    }
+                    if ui.button("Reset with random word").clicked() {
+                        self.reset_random_word();
+                    }
+                });
+            if !debug_open {
+                self.debug_menu.open = false;
+            }
+        }
+
+        if self.qrcode_window.open {
+            egui::Window::new("QR Code")
+                .open(&mut self.qrcode_window.open)
+                .default_pos(ctx.available_rect().center())
+                .default_size((200.0, 200.0))
+                .show(ctx, |ui| {
+                    draw::draw_qr_code(ui, &self.qrcode_window.data, self.qrcode_window.width);
+                });
         }
 
         egui::TopBottomPanel::top("top_panel").show(ctx, |ui| {
@@ -213,6 +240,12 @@ impl epi::App for WordleApp {
                 ui.menu_button("Menu", |ui| {
                     if ui.button("Quit").clicked() {
                         frame.quit();
+                    }
+                    if ui.button("Show QR Code").clicked() {
+                        let code = utils::gen_qrcode(self.word.clone());
+                        self.qrcode_window.data = code.0;
+                        self.qrcode_window.width = code.1;
+                        self.qrcode_window.open = !self.qrcode_window.open;
                     }
                     ui.checkbox(&mut self.debug_menu.open, "Show debug menu");
                 });
